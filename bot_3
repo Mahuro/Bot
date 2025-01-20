@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+interface IUniswapV2Router {
+    function swapExactETHForTokens(
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external payable returns (uint[] memory amounts);
+}
+
+// ✅ Hardcoded Chainlink Price Feed & Uniswap Router
+address constant _PRICEFEED = 0x694AA1769357215DE4FAC081bf1f309aDC325306;
+address constant _UNISWAPROUTER = 0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3;
+
+contract FinalizedSnipingBot is Ownable {
+    AggregatorV3Interface internal priceFeed;
+    IUniswapV2Router public uniswapRouter;
+
+    bool public isRunning;
+    address public tokenToSnipe;
+    uint public minProfitThreshold;
+    
+    uint private lastTradeTimestamp;
+    uint public tradeCooldown = 30; // Cooldown in seconds
+    uint public maxGasPrice = 100 gwei; // Max gas price allowed for a trade
+
+    event BotStarted();
+    event BotPaused();
+    event BotStopped();
+    event TokenSniped(address token, uint amount);
+    event Withdrawn(address indexed owner, uint amount);
+    event Deposited(address indexed sender, uint amount);
+    event SecurityUpdated(uint cooldown, uint maxGas);
+
+    // ✅ Constructor with Hardcoded Addresses
+    constructor() Ownable(msg.sender) {
+        priceFeed = AggregatorV3Interface(_PRICEFEED);
+        uniswapRouter = IUniswapV2Router(_UNISWAPROUTER);
+    }
+
+    // ✅ Start Bot (Gas Limit: 50,000)
+    function startBot() external onlyOwner {
+        require(gasleft() > 50000, "Insufficient gas");
+        isRunning = true;
+        emit BotStarted();
+    }
+
+    // ✅ Pause Bot (Gas Limit: 50,000)
+    function pauseBot() external onlyOwner {
+        require(gasleft() > 50000, "Insufficient gas");
+        isRunning = false;
+        emit BotPaused();
+    }
+
+    // ✅ Stop Bot (Gas Limit: 50,000)
+    function stopBot() external onlyOwner {
+        require(gasleft() > 50000, "Insufficient gas");
+        isRunning = false;
+        emit BotStopped();
+    }
+
+    // ✅ Set Token to Snipe (Gas Limit: 80,000)
+    function setTokenToSnipe(address _token) external onlyOwner {
+        require(gasleft() > 80000, "Insufficient gas");
+        tokenToSnipe = _token;
+    }
+
+    // ✅ Set Minimum Profit Threshold (Gas Limit: 70,000)
+    function setMinProfitThreshold(uint _minProfit) external onlyOwner {
+        require(gasleft() > 70000, "Insufficient gas");
+        minProfitThreshold = _minProfit;
+    }
+
+    // ✅ Update Security Settings (Gas Limit: 100,000)
+    function setSecuritySettings(uint _cooldown, uint _maxGas) external onlyOwner {
+        require(gasleft() > 100000, "Insufficient gas");
+        tradeCooldown = _cooldown;
+        maxGasPrice = _maxGas;
+        emit SecurityUpdated(_cooldown, _maxGas);
+    }
+
+    // ✅ Get Latest ETH Price (Gas Limit: 150,000)
+    function getLatestETHPrice() public view returns (int) {
+        require(gasleft() > 150000, "Insufficient gas");
+        (, int price, , , ) = priceFeed.latestRoundData();
+        return price;
+    }
+
+    // ✅ Snipe Token (Gas Limit: 500,000)
+    function snipeToken(uint amountOutMin, uint deadline) external payable onlyOwner {
+        require(isRunning, "Bot is not running!");
+        require(tokenToSnipe != address(0), "Token not set!");
+        require(block.timestamp >= lastTradeTimestamp + tradeCooldown, "Cooldown active!");
+        require(tx.gasprice <= maxGasPrice, "Gas price too high!");
+        require(gasleft() > 500000, "Insufficient gas");
+        address[] memory path = new address[](2);  // Declare 'path' as array
+        
+        path[0] = 0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6; // ✅ WETH address on Sepolia
+        path[1] = tokenToSnipe; // ✅ Target token address (must be set beforehand)
+
+        uint[] memory amounts = uniswapRouter.swapExactETHForTokens{value: msg.value}(
+            amountOutMin,
+            path,
+            address(this),
+            deadline
+        );
+
+        lastTradeTimestamp = block.timestamp;
+        emit TokenSniped(tokenToSnipe, amounts[1]);
+    }
+
+    // ✅ Deposit ETH (Gas Limit: 100,000)
+    function deposit() external payable {
+        require(msg.value > 0, "Deposit amount must be greater than 0");
+        require(gasleft() > 100000, "Insufficient gas");
+        emit Deposited(msg.sender, msg.value);
+    }
+
+    // ✅ Withdraw ETH (Gas Limit: 120,000)
+    function withdraw(uint256 amount) external onlyOwner {
+        require(amount <= address(this).balance, "Not enough funds!");
+        require(gasleft() > 120000, "Insufficient gas");
+        payable(owner()).transfer(amount);
+        emit Withdrawn(owner(), amount);
+    }
+
+    // ✅ Allow Contract to Receive ETH (Gas Limit: 50,000)
+    receive() external payable {
+        require(gasleft() > 50000, "Insufficient gas");
+    }
+}
